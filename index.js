@@ -2,6 +2,8 @@ const express = require("express")
 const fs = require("fs")
 const csv = require('csv-parser');
 
+let data = require('./chosen_data.json')
+
 const { Builder, By, Key, until } = require('selenium-webdriver')
 const chrome = require('selenium-webdriver/chrome');  
 
@@ -13,44 +15,30 @@ app.get('/fin', async (req, res) => {
   res.end()
 })
 
+app.get('/test', async(req, res) => {
+  res.send("굿")
+})
+
 app.get('/', async (req, res) => {
   const start = new Date();
 
   const options = new chrome.Options();
   options.addArguments('--headless');
 
-  const filePath = 'menu_old.csv'
   let count = 1
+  let param = ""
 
-  for (let repeat = 0; repeat <= 50; repeat ++) {
-    const results = [];
-    let param = ""
-  
+  for (let repeat = 0; repeat < data.length; repeat ++) {
+
     let driver = new Builder().forBrowser('chrome').setChromeOptions(options).build()
+    let num = 0
+    let cleanedData = []
 
     try {
-      await new Promise((resolve, reject) => {
-        fs.createReadStream(filePath)
-          .pipe(csv())
-          .on('data', (row) => {
-            results.push(row);
-          })
-          .on('end', () => {
-            resolve(results);
-          })
-          .on('error', (error) => {
-            reject(error);
-          });
-      });
-    
-      const desiredRow = results.find(row => row['연번'] == count);
+      const currentItem = data[repeat];
 
-
-      if (desiredRow) {
-        const selected구 = desiredRow['구'];
-        const selected가맹점명칭 = desiredRow['가맹점명칭'];
-        const param = selected구 + " " + selected가맹점명칭;
-  
+      if (currentItem) {
+        param = `${currentItem.구} ${currentItem.가맹점명칭}`;
         await driver.get(`https://map.kakao.com/?q=${String(param)}`);
 
         let retries = 0;
@@ -67,47 +55,37 @@ app.get('/', async (req, res) => {
           }
           catch (error) {
             retries++;
-            await new Promise((resolve) => setTimeout(resolve, 200))
+            await new Promise((resolve) => setTimeout(resolve, 500))
           }
         }
-      }
-    }
-    catch (err) {
-      console.log("에러시발")
-    }
-    finally {
-      await driver.quit()
-    }
 
-    driver = new Builder().forBrowser('chrome').setChromeOptions(options).build()
-  
-    let cleanedData = []
-  
-    try {
-      await driver.get(`https://place.map.kakao.com/${num}`)
-      await driver.manage().setTimeouts({ implicit: 3000 });
-  
-      const placelist = await driver.findElements(By.className('list_menu'));
-      let splited = []
+        let splited = []
 
-      for (const element of placelist) {
-        const menuText = await element.getText();
-        splited = menuText.split('\n')
-      }
-  
-      for (let i = 0; i < splited.length - 1; i ++) {
-        const name = splited[i];
-        let price = splited[i + 1]; 
-  
-        if (price && !isNaN(parseInt(price.replace(/,/g, '')))) {
-          price = parseInt(price.replace(/,/g, ''));
-          cleanedData.push({ name, price }); 
+        await driver.get(`https://place.map.kakao.com/${num}`);
+
+        const menulistLocator = By.className('list_menu');
+        await driver.wait(until.elementLocated(menulistLocator), 5000, 'not found');
+        const menulist = await driver.findElements(menulistLocator);
+
+        for (const element of menulist) {
+          const menuText = await element.getText();
+          splited = menuText.split('\n')
         }
-      }
     
+        for (let i = 0; i < splited.length - 1; i ++) {
+          const name = splited[i];
+          let price = splited[i + 1]; 
+    
+          if (price && !isNaN(parseInt(price.replace(/,/g, '')))) {
+            price = parseInt(price.replace(/,/g, ''));
+            cleanedData.push({ name, price }); 
+          }
+        }
+    
+      }
     }
     catch (err) {
-      console.log('err')
+      
     }
     finally {
       await driver.quit()
@@ -117,16 +95,16 @@ app.get('/', async (req, res) => {
     const elapsed = ((end - start) / 1000) + "초";
   
     if (num == 0) {
-      input_data.push({ id: count, menu: "메뉴 데이터가 없습니다." })
+      input_data.push({ id: count, name: param.split(' ')[1], menu: "" })
     }
     else if (cleanedData == []) {
-      input_data.push({ id: count, menu: "메뉴 데이터가 없습니다." })
+      input_data.push({ id: count, name: param.split(' ')[1], menu: ""})
     }
     else {
-      input_data.push({ id: count, menu: cleanedData })
+      input_data.push({ id: count, name: param.split(' ')[1], menu: cleanedData })
     }
   
-    console.log(`${count}/101077 ... 작업 수행 중 ... 이번 시도까지 걸린 시간: ${elapsed}`)
+    console.log(`${count}/${data.length} ... 작업 수행 중 ... 이번 시도까지 걸린 시간: ${elapsed}`)
     console.log(input_data.menu == "메뉴 데이터가 없습니다" ? "메뉴 없음\n" : "메뉴 파싱 완료\n")
     
     count += 1
